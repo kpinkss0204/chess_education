@@ -97,7 +97,7 @@ function pseudoMoves(board, r, c, castling, enPassant) {
     });
   } else if(type==='N'){[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]].forEach(([dr,dc])=>push(r+dr,c+dc));}
   else if(type==='B'){slide([-1,-1,1,1],[-1,1,-1,1]);}
-  else if(type==='R'){slide([-1,0,1,0],[0,-1,0,1]);}
+  else if(type==='R'){slide([-1,1,0,0],[0,0,-1,1]);}
   else if(type==='Q'){slide([-1,-1,-1,0,0,1,1,1],[-1,0,1,-1,1,-1,0,1]);}
   else if(type==='K'){[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]].forEach(([dr,dc])=>push(r+dr,c+dc));
     if(color==='w'){if(castling.wK&&!board[7][5]&&!board[7][6]&&board[7][7]==='wR')moves.push({from:[7,4],to:[7,6],castle:'K'});if(castling.wQ&&!board[7][3]&&!board[7][2]&&!board[7][1]&&board[7][0]==='wR')moves.push({from:[7,4],to:[7,2],castle:'Q'});}
@@ -232,10 +232,18 @@ function renderBoard() {
 let _pendingPromo = null;
 
 function onSquareClick(r, c) {
-  if (!_gameActive) return;
-  if (_turn !== _myColor) return; // 내 차례 아님
+  console.log('[DEBUG] Square clicked:', r, c, 'Active:', _gameActive, 'Turn:', _turn, 'MyColor:', _myColor);
+  if (!_gameActive) {
+    console.log('[DEBUG] Game not active');
+    return;
+  }
+  if (_turn !== _myColor) {
+    console.log('[DEBUG] Not my turn');
+    return; // 내 차례 아님
+  }
 
   const piece = _board[r][c];
+  console.log('[DEBUG] Piece clicked:', piece);
 
   if (_selected) {
     const move = _legalMoves.find(m => m.to[0]===r && m.to[1]===c);
@@ -248,13 +256,25 @@ function onSquareClick(r, c) {
       doMove(move, null);
       return;
     }
+    // 이동 수 없음 → 내 기물이면 재선택, 아니면 선택 해제
+    if (piece && typeof piece === 'string' && piece[0] === _myColor) {
+      _selected = [r, c];
+      _legalMoves = getLegalMoves(_board, r, c, _castling, _enPassant);
+    } else {
+      _selected = null; _legalMoves = [];
+    }
+    renderBoard();
+    return;
   }
 
   // 내 기물 선택
-  if (piece && piece[0] === _myColor) {
+  console.log('[DEBUG] Piece:', piece, 'MyColor:', _myColor, 'Match:', (piece && typeof piece === 'string' && piece[0] === _myColor));
+  if (piece && typeof piece === 'string' && piece[0] === _myColor) {
+    console.log('[DEBUG] Selecting piece');
     _selected = [r, c];
     _legalMoves = getLegalMoves(_board, r, c, _castling, _enPassant);
   } else {
+    console.log('[DEBUG] Deselecting');
     _selected = null; _legalMoves = [];
   }
   renderBoard();
@@ -294,10 +314,10 @@ function showPromoModal(r, c) {
 // ══════════════════════════════════════════
 // 수 실행
 // ══════════════════════════════════════════
-function doMove(move, promoPiece) {
+function doMove(move, promoPiece, isRemote) {
   const boardBefore = _board.map(r=>[...r]);
-  _board = applyMoveToBoard(_board, move, _turn);
   if (promoPiece) move.promoPiece = promoPiece;
+  _board = applyMoveToBoard(_board, move, _turn);
 
   // ── 첫 수 처리 ──
   if (!_firstMoveDone) {
@@ -307,8 +327,9 @@ function doMove(move, promoPiece) {
     setupDisconnectLoss();
   }
 
-  // 캐슬링 업데이트
-  if (_board[move.to[0]][move.to[1]] === _turn+'K') {
+  // 캐슬링 업데이트 (applyMoveToBoard 이전 보드 기준)
+  const movedPiece = boardBefore[move.from[0]][move.from[1]];
+  if (movedPiece === _turn + 'K') {
     if (_turn==='w'){_castling.wK=false;_castling.wQ=false;}
     else{_castling.bK=false;_castling.bQ=false;}
   }
@@ -334,8 +355,8 @@ function doMove(move, promoPiece) {
   const _allM=getAllLegal(boardBefore,prevTurn,_castling,_enPassant);
   _sanMoves.push(moveToSAN(boardBefore,move,prevTurn,_allM));
 
-  // Firebase에 수 전송
-  sendMove(move);
+  // Firebase에 수 전송 (내 수일 때만)
+  if (!isRemote) sendMove(move);
   updateTimerOnMove();
 
   renderBoard();
@@ -492,6 +513,7 @@ async function startMatchmaking() {
           const gameData = {
             white: myColor==='w'?_user.uid:d.uid, black: myColor==='b'?_user.uid:d.uid,
             whiteName: myColor==='w'?myName:d.displayName, blackName: myColor==='b'?myName:d.displayName,
+            whiteUid: myColor==='w'?_user.uid:d.uid, blackUid: myColor==='b'?_user.uid:d.uid,
             status: 'playing', whiteTime: GAME_TIME, blackTime: GAME_TIME,
             lastMoveAt: Date.now(), createdAt: Date.now(),
           };
@@ -569,6 +591,7 @@ function joinGame(gameId, myColor, gameData) {
   _lastTickTime = Date.now();
   _sanMoves = [];
   _gameArrows = {};
+  _oppUid = myColor === 'w' ? (gameData.blackUid || null) : (gameData.whiteUid || null);
 
   const myName  = myColor==='w' ? gameData.whiteName : gameData.blackName;
   const oppName = myColor==='w' ? gameData.blackName  : gameData.whiteName;
@@ -635,7 +658,7 @@ function applyRemoteMove(d) {
   );
   if (!move) return;
   if (d.promo) move.promoPiece = d.promo;
-  doMove(move, d.promo || null);
+  doMove(move, d.promo || null, true); // isRemote=true: Firebase 재전송 방지
 }
 
 function sendMove(move) {
@@ -804,19 +827,80 @@ async function saveRecord(result) {
 
     if (_gameId) {
       try {
-        const existing = await _fbDb.collection('game_records').where('gameId','==',_gameId).where('uid','==',_user.uid).limit(1).get();
+        const existing = await _fbDb.collection('saved_pgns').where('gameId','==',_gameId).where('uid','==',_user.uid).limit(1).get();
         if (!existing.empty) return;
       } catch(e) {}
     }
 
-    await _fbDb.collection('game_records').add({
-      uid: _user.uid, playerName: myName, gameId: _gameId || '',
-      myColor: _myColor, whiteName, blackName,
-      result: resultStr, resultRaw: result,
-      moveCount: _sanMoves.length, pgn: fullPgn,
-      arrows: _gameArrows,
-      playedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    const white = _myColor === 'w' ? myName : oppName;
+    const black = _myColor === 'b' ? myName : oppName;
+    const savedAtVal = firebase.firestore.FieldValue.serverTimestamp();
+
+    // ── saved_pgns 저장 (분석 보드 기보 탭) ──────────────────
+    await _fbDb.collection('saved_pgns').add({
+      uid:         _user.uid,
+      gameId:      _gameId || '',
+      title:       `${white} vs ${black}`,
+      pgn:         fullPgn,
+      white,
+      black,
+      date:        today,
+      result:      resultStr,
+      opening:     '-',
+      whiteRating: '-',
+      blackRating: '-',
+      timeControl: '-',
+      moveCount:   _sanMoves.length,
+      savedAt:     savedAtVal,
     });
+
+    // ── game_records 저장 (대국 기록 탭) ─────────────────────
+    await _fbDb.collection('game_records').add({
+      uid:        _user.uid,
+      gameId:     _gameId || '',
+      playerName: myName,
+      myColor:    _myColor,
+      whiteName:  white,
+      blackName:  black,
+      white,
+      black,
+      date:       today,
+      result:     resultStr,
+      resultRaw:  result,
+      opening:    '-',
+      whiteRating: '-',
+      blackRating: '-',
+      timeControl: '-',
+      moveCount:  _sanMoves.length,
+      pgn:        fullPgn,
+      playedAt:   savedAtVal,
+      savedAt:    savedAtVal,
+    });
+    // 상대방 기롬 (상대방 uid를 알 때만)
+    if (_oppUid) {
+      const oppColor = _myColor === 'w' ? 'b' : 'w';
+      await _fbDb.collection('game_records').add({
+        uid:        _oppUid,
+        gameId:     _gameId || '',
+        playerName: oppName,
+        myColor:    oppColor,
+        whiteName:  white,
+        blackName:  black,
+        white,
+        black,
+        date:       today,
+        result:     resultStr,
+        resultRaw:  result,
+        opening:    '-',
+        whiteRating: '-',
+        blackRating: '-',
+        timeControl: '-',
+        moveCount:  _sanMoves.length,
+        pgn:        fullPgn,
+        playedAt:   savedAtVal,
+        savedAt:    savedAtVal,
+      });
+    }
   } catch(e) { console.warn('기보 저장 실패', e); }
 }
 
@@ -835,7 +919,8 @@ function showToast(msg, duration=2500) {
   setTimeout(() => t.classList.remove('show'), duration);
 }
 
-let _gameArrows = {}; 
+let _gameArrows = {};
+let _oppUid = null;
 
 // ══════════════════════════════════════════
 // 전역 노출
