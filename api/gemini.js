@@ -1,7 +1,7 @@
 // api/gemini.js
 // Google Gemini API 프록시
 
-export default async function handler(req, res) {
+export async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ message: 'Method Not Allowed' });
 
   const apiKey = process.env.GEMINI_API_KEY;
@@ -76,3 +76,25 @@ ${userMessage}`
     return res.status(500).json({ error: error.message });
   }
 }
+
+export const handler = async (event, context) => {
+  const req = {
+    method: event.httpMethod,
+    body: JSON.parse(event.body || '{}'),
+    headers: event.headers,
+  };
+  
+  let responseObj = { status: 200, body: {} };
+  const res = {
+    status: (code) => { responseObj.status = code; return res; },
+    json: (data) => { responseObj.body = data; },
+  };
+
+  await handler(req, res);
+
+  return {
+    statusCode: responseObj.status,
+    body: JSON.stringify(responseObj.body),
+    headers: { 'Content-Type': 'application/json' },
+  };
+};

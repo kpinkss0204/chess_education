@@ -12,7 +12,7 @@
 //   GET  /api/lichess-proxy?path=api-game&id={id}
 //        → lichess.org/api/game/{id}?accuracy=true  (ACPL·정확도 등, JSON)
 
-export default async function handler(req, res) {
+export async function handler(req, res) {
   const origin = req.headers.origin || '';
   const allowedOrigins = [
     'https://chess-education.vercel.app',
@@ -153,3 +153,29 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message });
   }
 }
+
+export const handler = async (event, context) => {
+  const req = {
+    method: event.httpMethod,
+    body: JSON.parse(event.body || '{}'),
+    headers: event.headers,
+    query: event.queryStringParameters || {},
+  };
+  
+  let responseObj = { status: 200, body: '', headers: {} };
+  const res = {
+    status: (code) => { responseObj.status = code; return res; },
+    json: (data) => { responseObj.body = JSON.stringify(data); responseObj.headers['Content-Type'] = 'application/json'; return res; },
+    setHeader: (key, val) => { responseObj.headers[key] = val; return res; },
+    send: (data) => { responseObj.body = data; return res; },
+    end: () => { return res; }
+  };
+
+  await handler(req, res);
+
+  return {
+    statusCode: responseObj.status,
+    body: responseObj.body,
+    headers: responseObj.headers,
+  };
+};

@@ -1,7 +1,7 @@
 // api/analyze.js
 // Render 백엔드 /analyze 프록시
 
-export default async function handler(req, res) {
+export async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ message: 'Method Not Allowed' });
 
   try {
@@ -35,3 +35,28 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Internal Server Error', detail: error.message });
   }
 }
+
+export const handler = async (event, context) => {
+  const req = {
+    method: event.httpMethod,
+    body: JSON.parse(event.body || '{}'),
+    headers: event.headers,
+  };
+  
+  let responseObj = { status: 200, body: '', headers: {} };
+  const res = {
+    status: (code) => { responseObj.status = code; return res; },
+    json: (data) => { responseObj.body = JSON.stringify(data); responseObj.headers['Content-Type'] = 'application/json'; return res; },
+    setHeader: (key, val) => { responseObj.headers[key] = val; return res; },
+    send: (data) => { responseObj.body = data; return res; },
+    end: () => { return res; }
+  };
+
+  await handler(req, res);
+
+  return {
+    statusCode: responseObj.status,
+    body: responseObj.body,
+    headers: responseObj.headers,
+  };
+};
