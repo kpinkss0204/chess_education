@@ -1,113 +1,116 @@
 // api/gemini.js
-// Google Gemini API 프록시
-
-export async function handler(req, res) {
+async function apiHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
-
+  if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ message: 'Method Not Allowed' });
 
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY 환경변수가 설정되지 않았습니다.' });
+  if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았습니다.' });
+
+  console.log(`[Gemini] Calling API with key: ${apiKey.slice(0, 7)}...${apiKey.slice(-3)}`);
 
   try {
     const { model, messages, prompt, max_tokens, temperature } = req.body;
-    
-    // Gemini API v1beta 사용 (gemini-1.5-flash 이상 모델은 v1beta에서 지원)
     const geminiModel = model || 'gemini-2.5-flash-lite';
+    // Use v1beta for better model compatibility
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
 
-    console.log('[API Proxy] Requesting URL:', url); // 디버깅용 로그
-
-    // System prompt 추출 및 User prompt 구성 (최대 호환성을 위해 하나로 합침)
-    let systemInstruction = '';
-    let userMessage = '';
+    let contents = [];
+    let systemInstruction = null;
 
     if (Array.isArray(messages)) {
-      systemInstruction = messages.find(m => m.role === 'system')?.content || '';
-      userMessage = messages.find(m => m.role === 'user')?.content || '';
-    } else if (prompt) {
-      userMessage = prompt;
-    }
-
-    if (!userMessage) {
-      return res.status(400).json({ error: '요청 본문에 messages 또는 prompt가 필요합니다.' });
-    }
-
-    // 시스템 지침을 유저 메시지 앞에 추가하여 모든 API 버전에서 호환되도록 구성
-    const combinedPrompt = systemInstruction 
-      ? `System Instructions:
-${systemInstruction}
-
-User Message:
-${userMessage}`
-      : userMessage;
-
-    const payload = {
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: combinedPrompt }]
+      messages.forEach(m => {
+        if (m.role === 'system') {
+          systemInstruction = { parts: [{ text: m.content }] };
+        } else {
+          contents.push({
+            role: m.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: m.content }]
+          });
         }
-      ],
+      });
+    } else if (prompt) {
+      contents = [{ role: 'user', parts: [{ text: prompt }] }];
+    } else {
+      contents = [{ role: 'user', parts: [{ text: 'Hello' }] }];
+    }
+
+    const requestBody = {
+      contents,
       generationConfig: {
         maxOutputTokens: max_tokens || 1000,
-        temperature: temperature || 0.3,
+        temperature: temperature || 0.3
       }
     };
+
+    if (systemInstruction) {
+      requestBody.system_instruction = systemInstruction;
+    }
 
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(requestBody),
     });
 
-    const data = await response.json();
-    
+    const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      console.error('[API Proxy] Error response:', data); // 디버깅용 로그
-      return res.status(response.status).json({ error: data.error?.message || 'Gemini API 오류' });
+      console.error('[Gemini] FULL ERROR:', JSON.stringify(data));
+      const errorMsg = data.error?.message || JSON.stringify(data);
+      return res.status(response.status).json({ 
+        error: `Gemini가 거절함 (${response.status}): ${errorMsg}` 
+      });
     }
-
-    // OpenAI/Groq 호환 포맷으로 변환하여 반환
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    return res.status(200).json({
-      choices: [{ message: { content } }]
-    });
-
+    return res.status(200).json({ choices: [{ message: { content } }] });
   } catch (error) {
+    console.error('[Gemini] Exception:', error);
     return res.status(500).json({ error: error.message });
   }
 }
 
 export const handler = async (event, context) => {
-  const req = {
-    method: event.httpMethod,
-    body: JSON.parse(event.body || '{}'),
-    headers: event.headers,
-  };
-  
-  let responseObj = { status: 200, body: {} };
-  const res = {
-    status: (code) => { responseObj.status = code; return res; },
-    json: (data) => { responseObj.body = data; },
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS,ANY',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Api-Key',
   };
 
-  await handler(req, res);
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, headers: corsHeaders, body: '' };
+  }
+
+  let body = {};
+  try { if (event.body) body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body; } catch (e) {}
+  
+  const req = { method: event.httpMethod, body, headers: event.headers || {}, query: event.queryStringParameters || {} };
+  let responseObj = { status: 200, body: '', headers: {} };
+  
+  const res = {
+    status: (code) => { responseObj.status = code; return res; },
+    setHeader: (key, val) => { responseObj.headers[key] = val; return res; },
+    json: (data) => { responseObj.body = JSON.stringify(data); responseObj.headers['Content-Type'] = 'application/json'; return res; },
+    send: (data) => { responseObj.body = data; return res; },
+    end: () => { return res; }
+  };
+
+  try {
+    await apiHandler(req, res);
+  } catch (err) {
+    console.error('[Fatal Error]:', err);
+    return {
+      statusCode: 500,
+      headers: corsHeaders,
+      body: JSON.stringify({ error: 'Lambda Crash', message: err.message })
+    };
+  }
 
   return {
     statusCode: responseObj.status,
-    body: typeof responseObj.body === 'string' ? responseObj.body : JSON.stringify(responseObj.body),
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    },
+    body: responseObj.body,
+    headers: { ...responseObj.headers, ...corsHeaders }
   };
 };

@@ -1656,7 +1656,7 @@ async function callGroqAPIWithSystem(systemPrompt, userContent, maxTokens = 800)
 
 async function callGroqAPIWithSystemTemp(systemPrompt, userContent, maxTokens = 800, temperature = 0.3) {
   try {
-    const response = await fetch('/api/groq', {
+    const response = await fetch('https://dkuehvozh8.execute-api.ap-northeast-2.amazonaws.com/dev/api/groq', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1684,7 +1684,7 @@ async function callGroqAPIWithSystemTemp(systemPrompt, userContent, maxTokens = 
 
   // ── Gemini 폴백 호출 ──
   try {
-    const response = await fetch('/api/gemini', {
+    const response = await fetch('https://dkuehvozh8.execute-api.ap-northeast-2.amazonaws.com/dev/api/gemini', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

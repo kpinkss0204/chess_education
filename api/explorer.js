@@ -2,7 +2,7 @@
 // Vercel 프록시: 브라우저 대신 서버에서 Lichess API 호출
 // 토큰이 클라이언트에 노출되지 않음
 
-export async function handler(req, res) {
+async function apiHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -43,6 +43,8 @@ export async function handler(req, res) {
   }
 }
 
+export { apiHandler as handler };
+
 export const handler = async (event, context) => {
   const req = {
     method: event.httpMethod,
@@ -54,17 +56,38 @@ export const handler = async (event, context) => {
   let responseObj = { status: 200, body: '', headers: {} };
   const res = {
     status: (code) => { responseObj.status = code; return res; },
-    json: (data) => { responseObj.body = JSON.stringify(data); responseObj.headers['Content-Type'] = 'application/json'; return res; },
     setHeader: (key, val) => { responseObj.headers[key] = val; return res; },
+    json: (data) => { 
+      responseObj.body = JSON.stringify(data); 
+      responseObj.headers['Content-Type'] = 'application/json'; 
+      return res; 
+    },
     send: (data) => { responseObj.body = data; return res; },
     end: () => { return res; }
   };
 
-  await handler(req, res);
+  try {
+    await apiHandler(req, res);
+  } catch (err) {
+    console.error('Handler Error:', err);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Internal Server Error', detail: err.message }),
+      headers: { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*' 
+      }
+    };
+  }
 
   return {
     statusCode: responseObj.status,
     body: responseObj.body,
-    headers: responseObj.headers,
+    headers: {
+      ...responseObj.headers,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
   };
 };

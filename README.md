@@ -86,10 +86,63 @@
 2. 서버리스 함수는 API Key를 사용하여 LLM에 질의.
 3. 생성된 자연어 해설을 다시 프론트엔드로 전달.
 4. `coach.js` 등이 이 해설을 화면에 표시하고, 해설 내의 좌표를 클릭하면 보드에 강조 표시를 합니다.
+---
+
+## 🚀 AWS 배포 및 인프라 아키텍처 (2026.05 업데이트)
+
+본 프로젝트는 AWS(Amazon Web Services)의 서버리스 인프라를 활용하여 배포되었으며, 2026년 5월 보안 및 API 안정성 개선 작업을 거쳐 현재의 구조를 갖추게 되었습니다.
+
+### 1. 인프라 구성 요소 (Full-Stack Serverless)
+*   **Frontend (Static Hosting)**:
+    *   **S3 (`chess-education-web-2026`)**: Vite로 빌드된 정적 자산(index.html, JS, CSS, WASM) 저장소.
+    *   **CloudFront (`d2jiknvgmzji5o.cloudfront.net`)**: 전 세계 에지 로케이션을 통한 콘텐츠 전송 및 HTTPS 보안 제공.
+*   **Backend (Serverless API)**:
+    *   **AWS Lambda (Node.js 20.x)**: `api/` 디렉토리의 함수들이 독립된 서버리스 함수로 실행.
+    *   **API Gateway**: Lambda 함수를 외부 HTTP 엔드포인트(`https://dkuehvozh8.execute-api...`)로 연결.
+    *   **Serverless Framework**: 백엔드 인프라를 코드로 관리(IaC)하고 배포하는 도구.
+
+### 2. API 통신 및 403 오류 해결 내역
+기존에 발생하던 `403 Forbidden` 오류를 해결하기 위해 다음과 같은 아키텍처 개선 및 패치를 적용했습니다.
+
+*   **API 직접 호출 (Direct Endpoint)**: 프론트엔드가 CloudFront를 거쳐 API를 호출하던 방식에서, AWS Lambda(API Gateway) 엔드포인트를 직접 호출하는 방식으로 변경하여 CORS 및 권한 문제를 해결했습니다.
+*   **Gemini API 최적화**: 
+    *   API 엔드포인트를 `v1`에서 `v1beta`로 업그레이드하여 `gemini-2.5-flash-lite` 등 최신 모델과의 호환성을 확보했습니다.
+    *   메시지 구조를 `system_instruction` 필드를 사용하는 표준 방식으로 재설계하여 해설의 정확도를 높였습니다.
+*   **Groq API 안정화**: `User-Agent` 헤더 추가 및 에러 핸들링 강화를 통해 모델 응답의 안정성을 확보했습니다.
+
+### 3. 배포 프로세스 (Deployment Guide)
+
+#### **A. 백엔드 (AWS Lambda) 배포**
+새로운 API 기능을 추가하거나 `api/` 폴더 내 코드를 수정했을 때 실행합니다.
+```powershell
+# 1. 환경 변수(API 키) 및 AWS 인증 정보 설정
+$env:AWS_ACCESS_KEY_ID="[액세스_키]"
+$env:AWS_SECRET_ACCESS_KEY="[비밀_키]"
+$env:GEMINI_API_KEY="[Gemini_키]"
+$env:GROQ_API_KEY="[Groq_키]"
+
+# 2. 배포 실행
+npx serverless deploy --force
+```
+
+#### **B. 프론트엔드 (S3 + CloudFront) 배포**
+UI 변경이나 `src/`, `public/` 내 코드를 수정했을 때 실행합니다.
+```powershell
+# 1. 빌드 (dist/ 폴더 생성)
+npm run build
+
+# 2. S3 동기화 (기존 파일 삭제 후 최신 빌드 업로드)
+aws s3 sync dist/ s3://chess-education-web-2026 --delete
+
+# 3. CloudFront 캐시 초기화 (필수)
+# 새로운 파일이 즉시 반영되도록 모든 에지 서버의 캐시를 삭제합니다.
+aws cloudfront create-invalidation --distribution-id E1Y8KWVT2568BS --paths "/*"
+```
 
 ---
 
-## 🛠 주요 로직 특징
+## 🧠 주요 알고리즘 및 기술 로직 (기존 유지)
+*(이하 기존 알고리즘 내용 유지)*
 -   **Variation Tree**: 메인라인 기보 외에도 중간에 다른 수를 두었을 때 분기되는 '변화수'를 트리 구조로 관리합니다.
 -   **Engine Previews**: 엔진이 제안하는 여러 라인을 실제 기보에 반영하기 전에 미리 보고 탐색할 수 있는 기능을 제공합니다.
 -   **Responsive UI**: 모바일 환경에서는 기보 리스트가 가로형으로 변하며, 터치 드래그를 지원합니다.

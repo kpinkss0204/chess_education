@@ -1,5 +1,7 @@
 service: chess-education-api
 
+useDotenv: true
+
 provider:
   name: aws
   runtime: nodejs20.x
@@ -16,39 +18,109 @@ functions:
       - http:
           path: api/analyze-pgn
           method: any
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - Authorization
+              - X-Amz-Date
+              - Api-Key
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
   analyze:
     handler: api/analyze.handler
     events:
       - http:
           path: api/analyze
           method: any
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - Authorization
+              - X-Amz-Date
+              - Api-Key
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
   explorer:
     handler: api/explorer.handler
     events:
       - http:
           path: api/explorer
           method: any
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - Authorization
+              - X-Amz-Date
+              - Api-Key
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
   gemini:
     handler: api/gemini.handler
     events:
       - http:
           path: api/gemini
           method: any
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - Authorization
+              - X-Amz-Date
+              - Api-Key
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
   groq:
     handler: api/groq.handler
     events:
       - http:
           path: api/groq
           method: any
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - Authorization
+              - X-Amz-Date
+              - Api-Key
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
   lichess-proxy:
     handler: api/lichess-proxy.handler
     events:
       - http:
           path: api/lichess-proxy
           method: any
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - Authorization
+              - X-Amz-Date
+              - Api-Key
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
   lichess-token:
     handler: api/lichess-token.handler
     events:
       - http:
           path: api/lichess-token
           method: any
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - Authorization
+              - X-Amz-Date
+              - Api-Key
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
