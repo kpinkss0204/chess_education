@@ -3,6 +3,14 @@
 // LICHESS_TOKEN 환경변수를 클라이언트에 안전하게 전달
 
 export function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
   // GET 요청만 허용
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
