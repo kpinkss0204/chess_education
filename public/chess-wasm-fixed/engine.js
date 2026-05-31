@@ -999,95 +999,24 @@ function updateTacticsStatusPanel(result, histEntry) {
 function tryTriggerTacticsForCurrentMove(fenOptional) {
   // [수동 분석으로 전환: 자동으로 수 평가(블런더, 실수, 부정확 등) 트리거 비활성화]
   return;
-
-  // 실시간 대국 중 자동 수 평가 비활성화
-  return;
-
-  const CT = typeof ChessTactics !== 'undefined' ? ChessTactics : null;
-  if (!CT || typeof CT.scheduleAutoAnalyzeMove !== 'function') return;
-  if (!game || game.historyIndex < 0 || !game.history.length) return;
-  if (typeof AnalysisCache !== 'undefined' && AnalysisCache.isGamePreAnalyzed(game)) return;
-
-  const h = game.history[game.historyIndex];
-  if (!h || !h.fenBefore) return;
-
-  const fenAfter = h.fenAfter || fenOptional;
-  if (!fenAfter) return;
-
-  const cacheB = evalCache[normFen(h.fenBefore)];
-  const cacheA = evalCache[normFen(fenAfter)];
-  if (!cacheB || cacheA == null) return;
-  if (cacheB.depth < MIN_TACTICS_EVAL_DEPTH || cacheA.depth < MIN_TACTICS_EVAL_DEPTH) return;
-
-  const moveKey = normFen(h.fenBefore) + '>' + normFen(fenAfter);
-
-  CT.scheduleAutoAnalyzeMove({
-    cpBeforeWhite: cacheB.cp,
-    cpAfterWhite: cacheA.cp,
-    mover: h.turn,
-    fenAfter,
-    fenBefore: h.fenBefore,
-    moveKey,
-    plyIndex: game.historyIndex,
-    san: h.san,
-  }, function (result) {
-    if (!result) return;
-    if (game.history[game.historyIndex] === h) {
-      if (result.judgment) {
-        h.annotation = result.judgment;
-        h.tactics = result.tactics || null;
-      }
-      if (typeof game.renderMoveList === 'function') game.renderMoveList();
-    }
-    updateTacticsStatusPanel(result, h);
-  });
 }
 
 /**
  * updateMoveAnnotations
- * evalCache를 참조해 game.history 각 수의 annotation(blunder/mistake/inaccuracy)을
- * 계산하고, move-list DOM의 배지를 즉시 갱신합니다.
- *
- * - game.history[i].annotation 갱신 (lichessCpAdviceJudgment 기준)
- * - evalCache에 양쪽 FEN이 모두 없으면 해당 수는 건너뜀
- * - DOM: .move-cell .move-annotation 배지 삽입/갱신
+ * game.history의 annotation 정보를 바탕으로 move-list DOM에 배지(??, ?!, ?)를 그립니다.
+ * (자동 평가 로직은 비활성화되었으며, 수동 분석 완료 시에만 데이터가 채워집니다.)
  */
 function updateMoveAnnotations() {
   if (typeof game === 'undefined' || !game || !game.history || game.history.length === 0) return;
 
-  // 게임 분석 완료 후 잠금 상태이면 annotation 덮어쓰기 금지
-  if (window.sfAnalysisLocked) return;
-
   const SYMBOLS = { blunder: '??', mistake: '?', inaccuracy: '?!' };
   const CLASSES  = { blunder: 'ann-blunder', mistake: 'ann-mistake', inaccuracy: 'ann-inaccuracy' };
-
-  let anyChanged = false;
-
-  for (let i = 0; i < game.history.length; i++) {
-    const h = game.history[i];
-    if (!h || !h.fenBefore || !h.fenAfter) continue;
-
-    const cacheB = evalCache[normFen(h.fenBefore)];
-    const cacheA = evalCache[normFen(h.fenAfter)];
-    if (!cacheB || !cacheA) continue;
-
-    // lichess 기준 판정
-    const judgment = (typeof lichessCpAdviceJudgment === 'function')
-      ? lichessCpAdviceJudgment(cacheB.cp, cacheA.cp, h.turn)
-      : null;
-
-    if (h.annotation !== judgment) {
-      h.annotation = judgment;
-      anyChanged = true;
-    }
-  }
 
   // DOM 배지 갱신: move-list 내 .move-cell 순서와 game.history 순서 동기화
   const moveListEl = document.getElementById('move-list');
   if (!moveListEl) return;
 
   const cells = moveListEl.querySelectorAll('.move-cell');
-  // move-list는 pair 단위로 렌더됨: pair당 white(i*2), black(i*2+1)
   // cells 인덱스 = history 인덱스 (renderMoveList 구조 기준)
   cells.forEach((cell, idx) => {
     const h = game.history[idx];
