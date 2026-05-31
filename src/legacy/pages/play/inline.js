@@ -837,22 +837,10 @@ async function saveRecord(result) {
     const savedAtVal = firebase.firestore.FieldValue.serverTimestamp();
 
     // ── saved_pgns 저장 (분석 보드 기보 탭) ──────────────────
-    await _fbDb.collection('saved_pgns').add({
-      uid:         _user.uid,
-      gameId:      _gameId || '',
-      title:       `${white} vs ${black}`,
-      pgn:         fullPgn,
-      white,
-      black,
-      date:        today,
-      result:      resultStr,
-      opening:     '-',
-      whiteRating: '-',
-      blackRating: '-',
-      timeControl: '-',
-      moveCount:   _sanMoves.length,
-      savedAt:     savedAtVal,
-    });
+    await _fbDb.collection('saved_pgns').add({ uid: _user.uid, gameId: _gameId || '', title: `${white} vs ${black}`, pgn: fullPgn, white, black, date: today, result: resultStr, opening: '-', whiteRating: '-', blackRating: '-', timeControl: '-', moveCount: _sanMoves.length, savedAt: savedAtVal });
+    if (_oppUid) {
+      await _fbDb.collection('saved_pgns').add({ uid: _oppUid, gameId: _gameId || '', title: `${white} vs ${black}`, pgn: fullPgn, white, black, date: today, result: resultStr, opening: '-', whiteRating: '-', blackRating: '-', timeControl: '-', moveCount: _sanMoves.length, savedAt: savedAtVal });
+    }
 
     // ── game_records 저장 (대국 기록 탭) ─────────────────────
     await _fbDb.collection('game_records').add({

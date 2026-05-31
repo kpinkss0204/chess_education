@@ -1000,6 +1000,9 @@ function tryTriggerTacticsForCurrentMove(fenOptional) {
   // [수동 분석으로 전환: 자동으로 수 평가(블런더, 실수, 부정확 등) 트리거 비활성화]
   return;
 
+  // 실시간 대국 중 자동 수 평가 비활성화
+  return;
+
   const CT = typeof ChessTactics !== 'undefined' ? ChessTactics : null;
   if (!CT || typeof CT.scheduleAutoAnalyzeMove !== 'function') return;
   if (!game || game.historyIndex < 0 || !game.history.length) return;
