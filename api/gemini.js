@@ -102,7 +102,12 @@ export const handler = async (event, context) => {
 
   return {
     statusCode: responseObj.status,
-    body: JSON.stringify(responseObj.body),
-    headers: { 'Content-Type': 'application/json' },
+    body: typeof responseObj.body === 'string' ? responseObj.body : JSON.stringify(responseObj.body),
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
   };
 };

@@ -15,40 +15,40 @@ functions:
     events:
       - http:
           path: api/analyze-pgn
-          method: post
+          method: any
   analyze:
     handler: api/analyze.handler
     events:
       - http:
           path: api/analyze
-          method: post
+          method: any
   explorer:
     handler: api/explorer.handler
     events:
       - http:
           path: api/explorer
-          method: post
+          method: any
   gemini:
     handler: api/gemini.handler
     events:
       - http:
           path: api/gemini
-          method: post
+          method: any
   groq:
     handler: api/groq.handler
     events:
       - http:
           path: api/groq
-          method: post
+          method: any
   lichess-proxy:
     handler: api/lichess-proxy.handler
     events:
       - http:
           path: api/lichess-proxy
-          method: post
+          method: any
   lichess-token:
     handler: api/lichess-token.handler
     events:
       - http:
           path: api/lichess-token
-          method: post
+          method: any

@@ -68,6 +68,11 @@ export const handler = async (event, context) => {
   return {
     statusCode: responseObj.status,
     body: responseObj.body,
-    headers: responseObj.headers,
+    headers: {
+      ...responseObj.headers,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
   };
 };
