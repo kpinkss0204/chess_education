@@ -277,13 +277,6 @@ function setTheme(name) {
   });
 }
 
-function setPieceStyle(style, btn) {
-  currentPieceStyle = style;
-  document.querySelectorAll('.piece-style-btn').forEach(b=>b.classList.remove('selected'));
-  if (btn) btn.classList.add('selected');
-  game.renderBoard();
-  showToast(`기물 스타일: ${style}`);
-}
 
 function toggleCoords(el) {
   el.classList.toggle('on');

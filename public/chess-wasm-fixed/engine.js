@@ -50,9 +50,9 @@ async function getStockfishBlobUrl() {
           if (!res || !res.ok) {
             throw new Error(`파일 없음 (HTTP ${res ? res.status : 'network error'})`);
           }
-          // Content-Length로 크기 확인 — 5KB 미만이면 stub으로 간주
+          // Content-Length로 크기 확인 — 50KB 미만이면 stub으로 간주
           const cl = parseInt(res.headers.get('content-length') || '0', 10);
-          if (cl > 0 && cl < 5 * 1024) {
+          if (cl > 0 && cl < 50 * 1024) {
             throw new Error(`파일 너무 작음 (${(cl/1024).toFixed(1)}KB) — stub 파일로 판단, CDN으로 폴백`);
           }
         }
@@ -1055,6 +1055,9 @@ function tryTriggerTacticsForCurrentMove(fenOptional) {
  */
 function updateMoveAnnotations() {
   if (typeof game === 'undefined' || !game || !game.history || game.history.length === 0) return;
+
+  // 게임 분석 완료 후 잠금 상태이면 annotation 덮어쓰기 금지
+  if (window.sfAnalysisLocked) return;
 
   const SYMBOLS = { blunder: '??', mistake: '?', inaccuracy: '?!' };
   const CLASSES  = { blunder: 'ann-blunder', mistake: 'ann-mistake', inaccuracy: 'ann-inaccuracy' };

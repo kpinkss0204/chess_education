@@ -1277,9 +1277,13 @@ const SF_ANA_DEPTH = typeof LICHESS_SF_DEPTH !== 'undefined' ? LICHESS_SF_DEPTH 
     let _sfAnalysisBusy = false;
     let _autoGameAnalysisTimer = null;
     let _lastAutoAnalyzedPgnKey = '';
+    let _sfAnalysisLocked = false;   // 분석 완료 후 annotation 잠금
+    let _lockedPgnKey = '';          // 잠금된 게임의 PGN 키
 
     function resetAutoGameAnalysisCache() {
       _lastAutoAnalyzedPgnKey = '';
+      _sfAnalysisLocked = false;
+      _lockedPgnKey = '';
     }
     window.resetAutoGameAnalysisCache = resetAutoGameAnalysisCache;
 
@@ -1308,6 +1312,20 @@ const SF_ANA_DEPTH = typeof LICHESS_SF_DEPTH !== 'undefined' ? LICHESS_SF_DEPTH 
     async function analyzeCurrentGameWithSF(opts) {
       opts = opts || {};
       if (_sfAnalysisBusy) return;
+
+      // 이미 분석 완료 후 잠긴 경우: 같은 게임이면 재분석 없이 결과 유지
+      const pgn0 = typeof game?.generatePgn === 'function' ? game.generatePgn() : '';
+      const myColor0 = document.getElementById('sf-color-select')?.value || 'w';
+      if (_sfAnalysisLocked && _lockedPgnKey === pgn0 + '|' + myColor0) {
+        if (!opts.silent && typeof showToast === 'function') showToast('✅ 이미 분석된 게임입니다.');
+        return;
+      }
+
+      // 새 게임이면 잠금 해제
+      if (_sfAnalysisLocked && _lockedPgnKey !== pgn0 + '|' + myColor0) {
+        _sfAnalysisLocked = false;
+        _lockedPgnKey = '';
+      }
 
       // 이미 분석된 게임인지 확인
       const isPreAnalyzed = typeof AnalysisCache !== 'undefined' && AnalysisCache.isGamePreAnalyzed(game);
@@ -1382,7 +1400,7 @@ const SF_ANA_DEPTH = typeof LICHESS_SF_DEPTH !== 'undefined' ? LICHESS_SF_DEPTH 
         const myBlunders = j.myBlunders, myMistakes = j.myMistakes, myInaccuracies = j.myInaccuracies;
         const oppBlunders = j.oppBlunders, oppMistakes = j.oppMistakes, oppInaccuracies = j.oppInaccuracies;
 
-        let grammarCalls = 0;
+        // ── annotation 기록 및 잠금 ──────────────────────────
         for (const row of j.byPly) {
           if (game.history[row.plyIndex]) {
             game.history[row.plyIndex].annotation = row.cls || null;
@@ -1390,41 +1408,16 @@ const SF_ANA_DEPTH = typeof LICHESS_SF_DEPTH !== 'undefined' ? LICHESS_SF_DEPTH 
           }
         }
 
-        if (CT && typeof CT.detectTacticsGame === 'function') {
-          setStatus('<span style="color:var(--text-secondary)">⏳ [2단계] 전술 분석 (ChessGrammar)…</span>');
-          try {
-            // 게임 전체 전술 분석을 한 번에 가져옴 (모든 수 분석 지원)
-            const gameTacticsMap = await CT.detectTacticsGame(pgn, { mode: 'available', depth: 'l2' });
-            if (gameTacticsMap) {
-              for (let i = 1; i < states.length; i++) {
-                const move = states[i].move;
-                if (!move) continue;
-                const uci = (moveToUci(move) || '').toLowerCase();
-                
-                // ply i-1에서 uci를 두어 발생하는 전술 확인
-                const availableTactics = gameTacticsMap[i - 1];
-                const playedTList = (availableTactics && availableTactics.raw) ? 
-                                    availableTactics.raw.filter(t => t.trigger_move === uci) : [];
-                
-                if (playedTList.length > 0) {
-                  const tactics = CT.parseTacticList(playedTList);
-                  if (game.history[i - 1]) game.history[i - 1].tactics = tactics;
-                  grammarCalls++;
-                }
-              }
-            }
-          } catch (e) {
-            console.warn('[analyze] Game Grammar Error:', e.message);
-          }
-        }
+        // 분석 완료 후 annotation을 수 이동 시 덮어쓰지 않도록 잠금
+        _sfAnalysisLocked = true;
+        _lockedPgnKey = pgn + '|' + myColor;
 
         if (typeof game.renderMoveList === 'function') game.renderMoveList();
 
         _lastAutoAnalyzedPgnKey = pgn + '|' + myColor;
 
         setStatus(
-          `<span style="color:var(--accent-green-bright)">✅ 자동 분석 완료 — 깊이 ${SF_ANA_DEPTH}` +
-          (grammarCalls ? ` · Grammar ${grammarCalls}수` : '') + `</span>`
+          `<span style="color:var(--accent-green-bright)">✅ 분석 완료 — 깊이 ${SF_ANA_DEPTH}</span>`
         );
         if (depthBadge) depthBadge.textContent = `깊이 ${SF_ANA_DEPTH}`;
 
@@ -1472,6 +1465,12 @@ const SF_ANA_DEPTH = typeof LICHESS_SF_DEPTH !== 'undefined' ? LICHESS_SF_DEPTH 
     window.analyzeCurrentGameWithSF = analyzeCurrentGameWithSF;
     window.runSfAnalysis = analyzeCurrentGameWithSF; // Alias for body.html button compatibility
 
+    // 외부 파일(move-judgment.js 등)에서 잠금 상태 확인용
+    Object.defineProperty(window, 'sfAnalysisLocked', {
+      get: function () { return _sfAnalysisLocked; },
+      configurable: true,
+    });
+
     // 최선수 찾기 패널 접기/펼치기
     window.toggleThreatCollapse = function() {
       const body = document.getElementById('threat-body');
@@ -1486,6 +1485,8 @@ const SF_ANA_DEPTH = typeof LICHESS_SF_DEPTH !== 'undefined' ? LICHESS_SF_DEPTH 
       if (colorSel) {
         colorSel.addEventListener('change', function () {
           _lastAutoAnalyzedPgnKey = '';
+          _sfAnalysisLocked = false;
+          _lockedPgnKey = '';
           scheduleAutoGameAnalysis();
         });
       }
