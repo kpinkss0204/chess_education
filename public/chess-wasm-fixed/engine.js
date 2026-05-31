@@ -44,17 +44,13 @@ async function getStockfishBlobUrl() {
       try {
         console.log(`[Stockfish] 로드 시도 (${label}):`, src);
 
-        // CDN이 아닌 로컬 경로는 fetch HEAD로 존재 여부 + 크기를 확인
+        // CDN이 아닌 로컬 경로는 fetch HEAD로 존재 여부를 확인
         if (label !== 'CDN') {
           const res = await fetch(src, { method: 'HEAD' }).catch(() => null);
           if (!res || !res.ok) {
             throw new Error(`파일 없음 (HTTP ${res ? res.status : 'network error'})`);
           }
-          // Content-Length로 크기 확인 — 50KB 미만이면 stub으로 간주
-          const cl = parseInt(res.headers.get('content-length') || '0', 10);
-          if (cl > 0 && cl < 50 * 1024) {
-            throw new Error(`파일 너무 작음 (${(cl/1024).toFixed(1)}KB) — stub 파일로 판단, CDN으로 폴백`);
-          }
+          // 크기 확인 로직 제거 (stub 확인 불필요)
         }
 
         _stockfishBlobUrl = src;
