@@ -802,6 +802,7 @@ async function saveRecord(result) {
     qSnap.forEach(child => { child.ref.remove(); });
   } catch(e){}
   if (!_fbDb || !_user) return;
+
   try {
     let pgn = '';
     _sanMoves.forEach((san, i) => {
@@ -824,90 +825,59 @@ async function saveRecord(result) {
     const blackName = _myColor === 'b' ? myName : oppName;
     const today = new Date().toISOString().slice(0,10).replace(/-/g, '.');
     const fullPgn = `[White "${whiteName}"]\n[Black "${blackName}"]\n[Result "${resultStr}"]\n[Date "${today}"]\n\n${pgn} ${resultStr}`;
-    const savedAtVal = window.firebase.firestore.FieldValue.serverTimestamp();
+    
+    const fs = window.firebase.firestore;
+    const timestamp = fs.FieldValue.serverTimestamp();
 
-    // ── saved_pgns 저장 (분석 보드 기보 탭) ──────
-    let myPgnSaved = false;
-    let oppPgnSaved = false;
-    if (_gameId) {
-      try {
-        const existingMy = await _fbDb.collection('saved_pgns').where('gameId','==',_gameId).where('uid','==',_user.uid).limit(1).get();
-        if (!existingMy.empty) myPgnSaved = true;
-      } catch(e) {}
-      if (_oppUid) {
-        try {
-          const existingOpp = await _fbDb.collection('saved_pgns').where('gameId','==',_gameId).where('uid','==',_oppUid).limit(1).get();
-          if (!existingOpp.empty) oppPgnSaved = true;
-        } catch(e) {}
+    const commonData = {
+      gameId:     _gameId || '',
+      title:      `${whiteName} vs ${blackName}`,
+      white:      whiteName,
+      black:      blackName,
+      whiteName:  whiteName,
+      blackName:  blackName,
+      date:       today,
+      result:     resultStr,
+      opening:    '-',
+      whiteRating: null,
+      blackRating: null,
+      timeControl: null,
+      moveCount:  _sanMoves.length,
+      pgn:        fullPgn,
+      savedAt:    timestamp
+    };
+
+    async function saveForUser(uid, color, pName) {
+      if (!uid) return;
+      // ── saved_pgns 저장 ──────
+      const pgnSnap = await _fbDb.collection('saved_pgns').where('gameId','==',_gameId).where('uid','==',uid).limit(1).get();
+      if (pgnSnap.empty) {
+        await _fbDb.collection('saved_pgns').add({ ...commonData, uid });
+      }
+      // ── game_records 저장 ──────
+      const recSnap = await _fbDb.collection('game_records').where('gameId','==',_gameId).where('uid','==',uid).limit(1).get();
+      if (recSnap.empty) {
+        await _fbDb.collection('game_records').add({
+          ...commonData,
+          uid,
+          playerName: pName,
+          myColor:    color,
+          playedAt:   timestamp,
+          source:     'play',
+          resultRaw:  result
+        });
       }
     }
-    if (!myPgnSaved) {
-      await _fbDb.collection('saved_pgns').add({ uid: _user.uid, gameId: _gameId || '', title: `${whiteName} vs ${blackName}`, pgn: fullPgn, white: whiteName, black: blackName, date: today, result: resultStr, opening: '-', whiteRating: null, blackRating: null, timeControl: null, moveCount: _sanMoves.length, savedAt: savedAtVal });
-    }
-    if (_oppUid && !oppPgnSaved) {
-      await _fbDb.collection('saved_pgns').add({ uid: _oppUid, gameId: _gameId || '', title: `${whiteName} vs ${blackName}`, pgn: fullPgn, white: whiteName, black: blackName, date: today, result: resultStr, opening: '-', whiteRating: null, blackRating: null, timeControl: null, moveCount: _sanMoves.length, savedAt: savedAtVal });
-    }
 
-    let myRecSaved = false;
-    let oppRecSaved = false;
-    if (_gameId) {
-      try {
-        const existingMyRec = await _fbDb.collection('game_records').where('gameId','==',_gameId).where('uid','==',_user.uid).limit(1).get();
-        if (!existingMyRec.empty) myRecSaved = true;
-      } catch(e) {}
-      if (_oppUid) {
-        try {
-          const existingOppRec = await _fbDb.collection('game_records').where('gameId','==',_gameId).where('uid','==',_oppUid).limit(1).get();
-          if (!existingOppRec.empty) oppRecSaved = true;
-        } catch(e) {}
-      }
-    }
-    // ── game_records 저장 (대국 기롭 탭) ─────────
-    if (!myRecSaved) {
-      await _fbDb.collection('game_records').add({
-        uid:        _user.uid,
-        gameId:     _gameId || '',
-        playerName: myName,
-        myColor:    _myColor,
-        whiteName:  whiteName,
-        blackName:  blackName,
-        date:       today,
-        result:     resultStr,
-        resultRaw:  result,
-        opening:    '-',
-        whiteRating: null,
-        blackRating: null,
-        timeControl: null,
-        moveCount:  _sanMoves.length,
-        pgn:        fullPgn,
-        playedAt:   savedAtVal,
-        savedAt:    savedAtVal,
-        source:     'play',
-      });
-    }
-    if (_oppUid && !oppRecSaved) {
+    // 내 기록 저장
+    await saveForUser(_user.uid, _myColor, myName);
+
+    // 상대방 기록 저장
+    if (_oppUid) {
       const oppColor = _myColor === 'w' ? 'b' : 'w';
-      await _fbDb.collection('game_records').add({
-        uid:        _oppUid,
-        gameId:     _gameId || '',
-        playerName: oppName,
-        myColor:    oppColor,
-        whiteName:  whiteName,
-        blackName:  blackName,
-        date:       today,
-        result:     resultStr,
-        resultRaw:  result,
-        opening:    '-',
-        whiteRating: null,
-        blackRating: null,
-        timeControl: null,
-        moveCount:  _sanMoves.length,
-        pgn:        fullPgn,
-        playedAt:   savedAtVal,
-        savedAt:    savedAtVal,
-        source:     'play',
-      });
+      await saveForUser(_oppUid, oppColor, oppName);
     }
+
   } catch(e) { console.warn('기보 저장 실패', e); }
 }
 
