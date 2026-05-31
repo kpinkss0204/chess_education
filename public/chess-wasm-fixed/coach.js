@@ -1830,7 +1830,7 @@ function formatCommentary(text) {
     return formatPlain(escaped);
   }
 
-  let html = '';
+  let html = '<div class="coach-response-area">';
   for (const def of SECTION_DEFS) {
     const body = parsed[def.key];
     if (!body) continue;
