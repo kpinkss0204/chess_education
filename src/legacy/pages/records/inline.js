@@ -1320,7 +1320,7 @@ const __RC = window.__RECORDS_CONSTS__ || { SF_DEPTH: 18, SF_MULTIPV: 3, FORK_CP
                 moveJudgments: a.moveJudgments || [],
                 analyzedAt: firebase.firestore.FieldValue.serverTimestamp(),
                 sfDepth: __RC.SF_DEPTH,
-                analysisVersion: 6
+                analysisVersion: 7
               };
               await _fbDb.collection('game_records').doc(doc.id).update({ tacticAnalysis: savePayload });
             } catch (saveErr) { console.warn('[stats] 저장 실패:', saveErr); }
