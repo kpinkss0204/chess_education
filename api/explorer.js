@@ -43,7 +43,6 @@ async function apiHandler(req, res) {
   }
 }
 
-export { apiHandler as handler };
 
 export const handler = async (event, context) => {
   const req = {
