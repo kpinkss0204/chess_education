@@ -399,8 +399,16 @@ window.toggleMobilePanel = toggleMobilePanel;
         return result;
       }
 
-      // ── 게임 정확도 계산 (조화평균)
-      result.myAccuracy = gameAccuracyFromEvals(evalRows, myColor);
+      // ── 게임 단계 판별 (오프닝, 미들게임, 엔드게임)
+      const phases = typeof ChessDivider !== 'undefined' ? ChessDivider.divide(states) : { middle: null, end: null };
+
+      // ── 게임 정확도 계산 (단계별 포함)
+      const accObj = gameAccuracyFromEvals(evalRows, myColor, phases);
+      result.myAccuracy = accObj.accuracy;
+      result.openingAcc = accObj.opening;
+      result.middleAcc  = accObj.middle;
+      result.endAcc     = accObj.end;
+      result.phases     = phases;
 
       const missedRef = { count: 0 };
       const CT = typeof ChessTactics !== 'undefined' ? ChessTactics : null;
@@ -591,7 +599,13 @@ const __RC = window.__RECORDS_CONSTS__ || { SF_DEPTH: 18, SF_MULTIPV: 3, FORK_CP
           const dateStr = doc.playedAt ? new Date(doc.playedAt.seconds * 1000).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' }) : '—';
           const whiteRating = doc.whiteRating ? ` (${doc.whiteRating})` : '';
           const blackRating = doc.blackRating ? ` (${doc.blackRating})` : '';
-          item.innerHTML = `<div class="record-result-badge ${badgeClass}">${badge}</div><div class="record-info"><div class="record-players">${doc.whiteName || '백'}${whiteRating} vs ${doc.blackName || '흑'}${blackRating}</div><div class="record-meta"><span>${label}</span><span>${doc.moveCount || 0}수</span><span>${dateStr}</span></div></div>`;
+          
+          let accuracyBadge = '';
+          if (doc.tacticAnalysis && doc.tacticAnalysis.myAccuracy) {
+            accuracyBadge = `<div class="record-accuracy-badge">${Math.round(doc.tacticAnalysis.myAccuracy)}%</div>`;
+          }
+
+          item.innerHTML = `<div class="record-result-badge ${badgeClass}">${badge}</div><div class="record-info"><div class="record-players">${doc.whiteName || '백'}${whiteRating} vs ${doc.blackName || '흑'}${blackRating}</div><div class="record-meta"><span>${label}</span><span>${doc.moveCount || 0}수</span><span>${dateStr}</span></div></div>${accuracyBadge}`;
           item.addEventListener('click', () => openRecord(doc, item));
           listEl.appendChild(item);
         });
@@ -659,6 +673,20 @@ const __RC = window.__RECORDS_CONSTS__ || { SF_DEPTH: 18, SF_MULTIPV: 3, FORK_CP
       document.getElementById('vp-my-result').className = 'vp-result-label ' + (myWin ? 'win' : myLose ? 'lose' : 'draw');
       document.getElementById('vp-opp-result').textContent = myWin ? '패배' : myLose ? '승리' : '무승부';
       document.getElementById('vp-opp-result').className = 'vp-result-label ' + (myWin ? 'lose' : myLose ? 'win' : 'draw');
+      
+      // [추가] 정확도 요약 업데이트
+      const vaCard = document.getElementById('viewer-accuracy-card');
+      if (doc.tacticAnalysis && doc.tacticAnalysis.myAccuracy) {
+        const ta = doc.tacticAnalysis;
+        document.getElementById('va-total').textContent = Math.round(ta.myAccuracy) + '%';
+        document.getElementById('va-opening').textContent = (ta.openingAcc || 0) + '%';
+        document.getElementById('va-middle').textContent = (ta.middleAcc || 0) + '%';
+        document.getElementById('va-end').textContent = (ta.endAcc || 0) + '%';
+        vaCard.style.display = 'block';
+      } else {
+        vaCard.style.display = 'none';
+      }
+
       renderMoveTokens();
       document.getElementById('viewer-empty').style.display = 'none';
       document.getElementById('viewer-container').style.display = 'flex';
@@ -877,6 +905,177 @@ const __RC = window.__RECORDS_CONSTS__ || { SF_DEPTH: 18, SF_MULTIPV: 3, FORK_CP
     let _statsCache = null;
     let _statsBusy = false;
     let _statsGameDetails = [];  // 게임별 전술 상세 [{doc, tacticEvents}]
+    let _trendChart = null;
+
+    function getTrendData(docs, period) {
+      const now = new Date();
+      let labels = [], data = [];
+      const analyzedDocs = docs.filter(d => d.tacticAnalysis && d.tacticAnalysis.myAccuracy);
+      
+      if (period === '1D') {
+        // 최근 24시간 (3시간 단위)
+        for (let i = 7; i >= 0; i--) {
+          const start = new Date(now.getTime() - (i + 1) * 3 * 3600000);
+          const end = new Date(now.getTime() - i * 3 * 3600000);
+          const periodDocs = analyzedDocs.filter(d => {
+            const t = d.playedAt ? d.playedAt.seconds * 1000 : 0;
+            return t >= start.getTime() && t < end.getTime();
+          });
+          labels.push(`${start.getHours()}시`);
+          const avg = periodDocs.length ? periodDocs.reduce((sum, d) => sum + d.tacticAnalysis.myAccuracy, 0) / periodDocs.length : null;
+          data.push(avg ? Math.round(avg) : null);
+        }
+      } else if (period === '1W') {
+        // 최근 7일
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date(now.getTime() - i * 24 * 3600000);
+          const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
+          const periodDocs = analyzedDocs.filter(doc => {
+            const t = doc.playedAt ? new Date(doc.playedAt.seconds * 1000) : null;
+            return t && t.toLocaleDateString() === d.toLocaleDateString();
+          });
+          labels.push(dateStr);
+          const avg = periodDocs.length ? periodDocs.reduce((sum, doc) => sum + doc.tacticAnalysis.myAccuracy, 0) / periodDocs.length : null;
+          data.push(avg ? Math.round(avg) : null);
+        }
+      } else if (period === '1M') {
+        // 최근 30일 (5일 단위)
+        for (let i = 5; i >= 0; i--) {
+          const start = new Date(now.getTime() - (i + 1) * 5 * 24 * 3600000);
+          const end = new Date(now.getTime() - i * 5 * 24 * 3600000);
+          const periodDocs = analyzedDocs.filter(d => {
+            const t = d.playedAt ? d.playedAt.seconds * 1000 : 0;
+            return t >= start.getTime() && t < end.getTime();
+          });
+          labels.push(`${start.getMonth() + 1}/${start.getDate()}~`);
+          const avg = periodDocs.length ? periodDocs.reduce((sum, d) => sum + d.tacticAnalysis.myAccuracy, 0) / periodDocs.length : null;
+          data.push(avg ? Math.round(avg) : null);
+        }
+      } else if (period === '1Y') {
+        // 최근 12개월
+        for (let i = 11; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const monthStr = `${d.getMonth() + 1}월`;
+          const periodDocs = analyzedDocs.filter(doc => {
+            const t = doc.playedAt ? new Date(doc.playedAt.seconds * 1000) : null;
+            return t && t.getFullYear() === d.getFullYear() && t.getMonth() === d.getMonth();
+          });
+          labels.push(monthStr);
+          const avg = periodDocs.length ? periodDocs.reduce((sum, doc) => sum + doc.tacticAnalysis.myAccuracy, 0) / periodDocs.length : null;
+          data.push(avg ? Math.round(avg) : null);
+        }
+      }
+      return { labels, data };
+    }
+
+    function renderTrendChart(period = '1M') {
+      const ctx = document.getElementById('accuracyTrendChart');
+      if (!ctx) return;
+
+      // 버튼 활성화 상태 업데이트
+      document.querySelectorAll('.cp-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('onclick').includes(`'${period}'`));
+      });
+
+      const { labels, data } = getTrendData(_loadedDocs, period);
+
+      if (_trendChart) {
+        _trendChart.destroy();
+      }
+
+      const isDark = true; // 기본 테마가 다크
+      const textColor = '#a0a0a0';
+      const gridColor = 'rgba(255, 255, 255, 0.05)';
+
+      _trendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: '평균 정확도 (%)',
+            data: data,
+            borderColor: '#a0c060',
+            backgroundColor: 'rgba(160, 192, 96, 0.1)',
+            borderWidth: 3,
+            pointBackgroundColor: '#a0c060',
+            pointBorderColor: '#fff',
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            tension: 0.3,
+            fill: true,
+            spanGaps: true
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#2d2d2d',
+              titleColor: '#fff',
+              bodyColor: '#e8e8e8',
+              borderColor: '#444',
+              borderWidth: 1,
+              displayColors: false,
+              callbacks: {
+                label: (context) => `정확도: ${context.parsed.y}%`
+              }
+            }
+          },
+          scales: {
+            y: {
+              min: 0,
+              max: 100,
+              grid: { color: gridColor },
+              ticks: { color: textColor, stepSize: 20 }
+            },
+            x: {
+              grid: { display: false },
+              ticks: { color: textColor, font: { size: 10 } }
+            }
+          }
+        }
+      });
+    }
+
+    function calculateProgressRate(docs) {
+      const now = new Date().getTime();
+      const MS_IN_DAY = 24 * 3600 * 1000;
+      const MS_IN_WEEK = 7 * MS_IN_DAY;
+      const MS_IN_MONTH = 30 * MS_IN_DAY;
+
+      const analyzed = docs.filter(d => d.tacticAnalysis && d.tacticAnalysis.myAccuracy > 0);
+      if (analyzed.length < 2) return null;
+
+      const getAvg = (start, end) => {
+        const filtered = analyzed.filter(d => {
+          const t = d.playedAt.seconds * 1000;
+          return t >= start && t < end;
+        });
+        return filtered.length ? filtered.reduce((s, d) => s + d.tacticAnalysis.myAccuracy, 0) / filtered.length : null;
+      };
+
+      // 주간 트렌드
+      const currWeek = getAvg(now - MS_IN_WEEK, now);
+      const prevWeek = getAvg(now - 2 * MS_IN_WEEK, now - MS_IN_WEEK);
+      
+      // 월간 트렌드
+      const currMonth = getAvg(now - MS_IN_MONTH, now);
+      const prevMonth = getAvg(now - 2 * MS_IN_MONTH, now - MS_IN_MONTH);
+
+      let summary = "";
+      if (currWeek && prevWeek) {
+        const diff = currWeek - prevWeek;
+        summary += `- 주간 추세: ${diff >= 0 ? '▲' : '▼'} ${Math.abs(diff).toFixed(1)}% (지난주 대비)\n`;
+      }
+      if (currMonth && prevMonth) {
+        const diff = currMonth - prevMonth;
+        summary += `- 월간 추세: ${diff >= 0 ? '▲' : '▼'} ${Math.abs(diff).toFixed(1)}% (지난달 대비)\n`;
+      }
+
+      return summary || "최근 데이터가 부족하여 정확한 추세를 계산할 수 없습니다.";
+    }
 
     async function renderStats() {
       const contentEl = document.getElementById('stats-content'), subEl = document.getElementById('stats-sub');
@@ -920,10 +1119,12 @@ const __RC = window.__RECORDS_CONSTS__ || { SF_DEPTH: 18, SF_MULTIPV: 3, FORK_CP
         const total = docs.length;
         _statsGameDetails = [];
         const openingStatsMap = new Map();
+        let cachedAnalysisCount = 0, newlyAnalyzedCount = 0;
 
-        let newlyAnalyzedCount = 0;
-        let cachedAnalysisCount = 0;
         let sumMyAccuracy = 0, accuracyCount = 0;
+        let sumOpeningAcc = 0, openingAccCount = 0;
+        let sumMiddleAcc = 0, middleAccCount = 0;
+        let sumEndAcc = 0, endAccCount = 0;
 
         function accumulateFromAnalysis(doc, a) {
           sumMyBlunders += a.myBlunders || 0;
@@ -960,6 +1161,9 @@ const __RC = window.__RECORDS_CONSTS__ || { SF_DEPTH: 18, SF_MULTIPV: 3, FORK_CP
             _statsGameDetails.push({ doc, tacticEvents: a.tacticEvents, moveJudgments: a.moveJudgments });
           }
           if (a.myAccuracy > 0) { sumMyAccuracy += a.myAccuracy; accuracyCount++; }
+          if (a.openingAcc > 0) { sumOpeningAcc += a.openingAcc; openingAccCount++; }
+          if (a.middleAcc > 0) { sumMiddleAcc += a.middleAcc; middleAccCount++; }
+          if (a.endAcc > 0) { sumEndAcc += a.endAcc; endAccCount++; }
         }
 
         const updateLoadingUI = (idx, label = '포지션 분석 중…', extra = '') => {
@@ -1058,6 +1262,9 @@ const __RC = window.__RECORDS_CONSTS__ || { SF_DEPTH: 18, SF_MULTIPV: 3, FORK_CP
                 decoyFound: a.decoyFound || 0, decoyMissed: a.decoyMissed || 0,
                 myCpSum: a.myCpSum, myMoveCount: a.myMoveCount, totalMoves: a.totalMoves,
                 myAccuracy: a.myAccuracy || 0,
+                openingAcc: a.openingAcc || 0,
+                middleAcc: a.middleAcc || 0,
+                endAcc: a.endAcc || 0,
                 forkFound: a.forkFound, forkMissed: a.forkMissed, oppForkCreated: a.oppForkCreated || {},
                 tacticEvents: (a.tacticEvents || []).map(ev => ({
                   type: ev.type, subtype: ev.subtype, piece: ev.piece || '',
@@ -1078,6 +1285,9 @@ const __RC = window.__RECORDS_CONSTS__ || { SF_DEPTH: 18, SF_MULTIPV: 3, FORK_CP
         }
 
         const avgMyAccuracy = accuracyCount > 0 ? Math.round(sumMyAccuracy / accuracyCount) : 0;
+        const avgOpeningAcc = openingAccCount > 0 ? Math.round(sumOpeningAcc / openingAccCount) : 0;
+        const avgMiddleAcc  = middleAccCount > 0 ? Math.round(sumMiddleAcc / middleAccCount) : 0;
+        const avgEndAcc     = endAccCount > 0 ? Math.round(sumEndAcc / endAccCount) : 0;
 
         _statsCache = {
           total, wins, losses, draws, winsW, lossesW, drawsW, winsB, lossesB, drawsB,
@@ -1099,6 +1309,9 @@ const __RC = window.__RECORDS_CONSTS__ || { SF_DEPTH: 18, SF_MULTIPV: 3, FORK_CP
           decoyFound: sumDecoyFound, decoyMissed: sumDecoyMissed,
           avgCpLoss: sumMoves > 0 ? Math.round(sumCp / sumMoves) : 0,
           myAccuracy: avgMyAccuracy,
+          openingAcc: avgOpeningAcc,
+          middleAcc: avgMiddleAcc,
+          endAcc: avgEndAcc,
           openingStats: Array.from(openingStatsMap.values())
             .sort((a, b) => (b.w.total + b.b.total) - (a.w.total + a.b.total))
         };
@@ -1389,6 +1602,44 @@ const __RC = window.__RECORDS_CONSTS__ || { SF_DEPTH: 18, SF_MULTIPV: 3, FORK_CP
           </div>
         </div>
 
+        <!-- [추가] 단계별 정확도 리포트 -->
+        <div class="stats-card-group">
+          <div class="stats-group-title">🎯 게임 단계별 평균 정확도 (Opening / Middle / End)</div>
+          <div class="phase-accuracy-grid">
+            <div class="phase-acc-card">
+              <div class="phase-acc-label">오프닝</div>
+              <div class="phase-acc-value">${s.openingAcc}%</div>
+              <div class="phase-acc-bar"><div class="phase-acc-fill opening" style="width:${s.openingAcc}%"></div></div>
+            </div>
+            <div class="phase-acc-card">
+              <div class="phase-acc-label">미들게임</div>
+              <div class="phase-acc-value">${s.middleAcc}%</div>
+              <div class="phase-acc-bar"><div class="phase-acc-fill middle" style="width:${s.middleAcc}%"></div></div>
+            </div>
+            <div class="phase-acc-card">
+              <div class="phase-acc-label">엔드게임</div>
+              <div class="phase-acc-value">${s.endAcc}%</div>
+              <div class="phase-acc-bar"><div class="phase-acc-fill end" style="width:${s.endAcc}%"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- [추가] 실력 향상 추이 (Accuracy Trend) -->
+        <div class="stats-card-group">
+          <div class="stats-group-header">
+            <div class="stats-group-title">📈 실력 향상 추이 (Accuracy Trend)</div>
+            <div class="chart-periods">
+              <button class="cp-btn" onclick="renderTrendChart('1D')">1일</button>
+              <button class="cp-btn" onclick="renderTrendChart('1W')">1주일</button>
+              <button class="cp-btn active" onclick="renderTrendChart('1M')">1달</button>
+              <button class="cp-btn" onclick="renderTrendChart('1Y')">1년</button>
+            </div>
+          </div>
+          <div class="trend-chart-container">
+            <canvas id="accuracyTrendChart"></canvas>
+          </div>
+        </div>
+
         <div class="stats-card-group">
           <div class="stats-group-title">📊 대국 성과 요약</div>
           <div class="wdl-container">
@@ -1544,6 +1795,8 @@ const __RC = window.__RECORDS_CONSTS__ || { SF_DEPTH: 18, SF_MULTIPV: 3, FORK_CP
       `;
 
       renderOpeningStats(s.openingStats);
+      // [추가] 트렌드 차트 초기화 (기본 1개월)
+      setTimeout(() => renderTrendChart('1M'), 50);
     }
 
     function renderTacticModernCard(icon, name, type, found, missed) {
@@ -1678,6 +1931,7 @@ const __RC = window.__RECORDS_CONSTS__ || { SF_DEPTH: 18, SF_MULTIPV: 3, FORK_CP
     window.goToPrevMove = () => goToMove(_viewIdx - 1);
     window.goToNextMove = () => goToMove(_viewIdx + 1);
     window.goToLastMove = () => goToMove(_states.length - 1);
+    window.renderTrendChart = renderTrendChart;
     window.closeTacticModal = closeTacticModal;
     window.retryLoadRecords = retryLoadRecords;
     window.openTacticModal = openTacticModal;
@@ -1699,6 +1953,8 @@ const __RC = window.__RECORDS_CONSTS__ || { SF_DEPTH: 18, SF_MULTIPV: 3, FORK_CP
 
       try {
         const s = _statsCache;
+        const trendSummary = calculateProgressRate(_loadedDocs) || '충분한 데이터가 없습니다.';
+        
         const prompt = `
 당신은 세계적인 체스 코치입니다. 사용자의 최근 ${s.total}개 게임 통계 데이터를 바탕으로 실력 향상을 위한 개인화된 피드백을 제공해주세요.
 
@@ -1711,6 +1967,9 @@ const __RC = window.__RECORDS_CONSTS__ || { SF_DEPTH: 18, SF_MULTIPV: 3, FORK_CP
   * 나보다 높은 레이팅 상대: ${s.winsHigher}승 ${s.drawsHigher}무 ${s.lossesHigher}패 (승률: ${Math.round(s.winsHigher/Math.max(1, s.winsHigher+s.drawsHigher+s.lossesHigher)*100)}%)
   * 나보다 낮은 레이팅 상대: ${s.winsLower}승 ${s.drawsLower}무 ${s.lossesLower}패 (승률: ${Math.round(s.winsLower/Math.max(1, s.winsLower+s.drawsLower+s.lossesLower)*100)}%)
 - 평균 정확도 (Lichess Accuracy%): ${s.myAccuracy}%
+- 단계별 정확도: 오프닝 ${s.openingAcc}%, 미들게임 ${s.middleAcc}%, 엔드게임 ${s.endAcc}%
+- 실력 향상 추세 (최근 정확도 변화):
+${trendSummary}
 - 평균 Centipawn Loss: ${s.avgCpLoss}
 - 주요 전술 성과:
   * 핀(Pin): ${s.pinFound}회 성공 / ${s.pinMissed}회 놓침
