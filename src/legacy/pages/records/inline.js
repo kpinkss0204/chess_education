@@ -1824,24 +1824,6 @@ const __RC = window.__RECORDS_CONSTS__ || { SF_DEPTH: 18, SF_MULTIPV: 3, FORK_CP
           </div>
         </div>
 
-        <div class="stats-card-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-          <div>
-            <div class="stats-group-title">📏 대국 길이</div>
-            <div class="avg-moves-card">
-              <div class="avg-moves-num">${s.avgMoves}</div>
-              <div class="avg-moves-desc">평균 대국 수<br><span style="font-size:11px">대국당 평균 ${s.avgMoves}수 진행</span></div>
-            </div>
-          </div>
-          <div>
-            <div class="stats-group-title">🏁 종료 방식 요약</div>
-            <div class="end-list">
-              ${renderEndItem('체크메이트', s.endCheckmate, total)}
-              ${renderEndItem('기권/기타', s.endResign, total)}
-              ${renderEndItem('시간 초과', s.endTimeout, total)}
-              ${renderEndItem('무승부', s.endDraw, total)}
-            </div>
-          </div>
-        </div>
         <div style="height:32px"></div>
       `;
 
