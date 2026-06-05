@@ -1148,7 +1148,8 @@ function updateMoveHistory() {
 
 function updateStats() {
   document.getElementById('streak-count').textContent = state.streak;
-  document.getElementById('my-rating').textContent = state.rating;
+  const ratingEl = document.getElementById('my-rating');
+  if (ratingEl) ratingEl.textContent = state.rating;
   document.getElementById('stat-total').textContent = state.totalSolved;
   document.getElementById('stat-streak').textContent = state.bestStreak;
   document.getElementById('stat-today').textContent = state.todaySolved;
